@@ -25,12 +25,18 @@ LIVE_SPEEDS_PATH = "data/speeds/blr_live.parquet"
 
 @st.cache_resource(show_spinner=False)
 def load_graph():
+    if not os.path.exists(GRAPH_PATH):
+        st.error(f"Graph file not found: {GRAPH_PATH}. Please ensure data files are available.")
+        st.stop()
     G = ox.load_graphml(GRAPH_PATH)
     return G
 
 
 @st.cache_resource(show_spinner=False)
 def load_model():
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"Model file not found: {MODEL_PATH}. Please ensure model files are available.")
+        st.stop()
     model = EdgeTimeGNN(in_channels=25, out_channels=1)
     state = torch.load(MODEL_PATH, map_location="cpu")
     model.load_state_dict(state)
@@ -41,6 +47,9 @@ def load_model():
 @st.cache_data(show_spinner=False)
 def load_live_speeds():
     try:
+        if not os.path.exists(LIVE_SPEEDS_PATH):
+            st.warning("Live traffic data not available - using default values. For full features, ensure data files are present.")
+            return pd.DataFrame(columns=["lat", "lon", "currentSpeed", "freeFlowSpeed", "confidence", "jamFactor"])
         df = pd.read_parquet(LIVE_SPEEDS_PATH)
         # Make sure we have all the columns we need, add missing ones as NaN
         for col in ["currentSpeed", "freeFlowSpeed", "confidence", "jamFactor"]:
