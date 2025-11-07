@@ -20,7 +20,11 @@ st.caption("Shortest-path routing with GNN-based ETA vs baseline.")
 BLR_CENTER = (12.9716, 77.5946)
 GRAPH_PATH = "data/processed_graph/blr_enriched.graphml"
 MODEL_PATH = "models_subset/edge_time_sage_subset.pt"
-LIVE_SPEEDS_PATH = "data/speeds/blr_live.parquet"
+# Try demo data first, fall back to live data if available
+if os.path.exists("data/speeds/blr_demo.parquet"):
+    LIVE_SPEEDS_PATH = "data/speeds/blr_demo.parquet"
+else:
+    LIVE_SPEEDS_PATH = "data/speeds/blr_live.parquet"
 
 
 @st.cache_resource(show_spinner=False)
