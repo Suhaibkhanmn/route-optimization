@@ -1,0 +1,232 @@
+### **Project Approach: Route Optimization with Live Traffic ETA Prediction**
+
+---
+
+#### **1. Problem Statement**
+
+Urban traffic networks like Bengaluru's are highly dynamic — road speeds change minute to minute, and static routing systems (like Dijkstra on fixed OSM graphs) fail to capture real-world delays.
+
+Our goal is to predict *real-time* travel times between any two points using a combination of:
+
+* **Graph-based modeling** of the road network, and
+* **Machine learning** (specifically, a Graph Neural Network) that learns travel times on road segments, updated with **live traffic** data from the TomTom API.
+
+The result is a **humanized route optimization dashboard** that computes live ETAs and visualizes routes on a minimal UI.
+
+---
+
+#### **2. Approach Overview**
+
+The project blends **graph theory**, **geospatial data**, and **ML modeling**.
+
+We treated the city's road network as a **graph**, where:
+
+* **Nodes (V)** = intersections
+* **Edges (E)** = road segments connecting intersections
+
+Each edge carries real-world attributes — length, speed limit, number of lanes, and live speed from TomTom.
+
+The pipeline then predicts the **travel time** on each edge, and uses that to estimate the fastest route and ETA between any two coordinates.
+
+---
+
+#### **3. Architecture Overview**
+
+```
+             ┌──────────────────────────────────┐
+             │        Data Preparation          │
+             │  - Extract roads via OSMnx       │
+             │  - Compute midpoints             │
+             │  - Fetch live speeds (TomTom)    │
+             └──────────────────────────────────┘
+                           │
+                           ▼
+             ┌──────────────────────────────────┐
+             │     Feature Engineering          │
+             │  - Compute edge length, bearings │
+             │  - Merge static + live features  │
+             └──────────────────────────────────┘
+                           │
+                           ▼
+             ┌──────────────────────────────────┐
+             │       Model Training (GNN)       │
+             │  - PyTorch Geometric             │
+             │  - EdgeTimeGNN model             │
+             │  - Predict edge-level travel time│
+             └──────────────────────────────────┘
+                           │
+                           ▼
+             ┌──────────────────────────────────┐
+             │      Live Evaluation Pipeline     │
+             │  - Merge live data → graph edges  │
+             │  - Predict new edge times         │
+             │  - Compute best route & ETA       │
+             └──────────────────────────────────┘
+                           │
+                           ▼
+             ┌──────────────────────────────────┐
+             │           Streamlit UI            │
+             │  - Start/end location input       │
+             │  - Displays route + ETA           │
+             │  - Live traffic color overlay     │
+             └──────────────────────────────────┘
+```
+
+---
+
+#### **4. Components in Detail**
+
+**a. Data Pipeline**
+
+* We used **OSMnx** to download the full road graph of Bengaluru from OpenStreetMap.
+
+* For each edge, we extracted geographic midpoints and attributes such as:
+
+  * road length
+  * number of lanes
+  * oneway flag
+  * max speed
+  * highway type
+
+* Using the **TomTom Traffic API**, we queried live traffic speeds for each edge midpoint.
+
+* These speeds were merged into the OSMnx graph to produce a "live" road network.
+
+**b. Model Architecture**
+
+* The model, `EdgeTimeGNN`, is based on a **Graph Neural Network** implemented using **PyTorch Geometric**.
+
+* Each road segment (edge) is represented by a feature vector derived from geometry + traffic data.
+
+* The model performs **edge regression**, predicting the time required to traverse that segment.
+
+**c. Prediction Flow**
+
+* When a user selects start and end points:
+
+  1. The nearest graph nodes are identified using geodesic distance.
+
+  2. The trained GNN predicts updated edge travel times using current traffic.
+
+  3. A **shortest-time route** is computed (via Dijkstra/A*) using those predicted weights.
+
+  4. The total ETA is computed as the sum of edge predictions.
+
+* Live data refreshes periodically to keep ETAs current.
+
+**d. Streamlit Dashboard**
+
+* A minimal interface designed for clarity and smooth interaction:
+
+  * Input boxes for **Start Location** and **End Location**
+
+  * Interactive map rendered using **Folium**
+
+  * Live traffic overlay with color-coded roads:
+
+    * Green = free flow
+    * Yellow = moderate congestion
+    * Red = heavy traffic
+
+* The UI resets previous routes when new locations are entered to mimic the smooth experience of Google Maps.
+
+---
+
+#### **5. Technologies Used**
+
+| Layer              | Technology                  | Purpose                                   |
+| :----------------- | :-------------------------- | :---------------------------------------- |
+| Graph Construction | OSMnx, NetworkX             | Build and manipulate road graphs          |
+| Data Integration   | Pandas, Parquet, TomTom API | Handle static + live data                 |
+| Modeling           | PyTorch Geometric           | GNN for edge-level travel time prediction |
+| Web UI             | Streamlit, Folium           | Real-time visualization                   |
+| Utilities          | Geopy, dotenv               | Location lookup, API management           |
+
+---
+
+#### **6. Why These Choices**
+
+* **OSMnx**: Free, open-source, and provides direct access to real-world road networks with geometric detail.
+
+* **PyTorch Geometric**: Ideal for graph-based learning — handles variable-size edge/node embeddings efficiently.
+
+* **TomTom API**: Provides real-time speed per road segment, allowing the model to adapt dynamically.
+
+* **Streamlit**: Simplest Python-native UI for ML apps — deployable instantly and integrates with live inference.
+
+* **Parquet**: Fast columnar data format for intermediate edge datasets, smaller footprint than CSV.
+
+---
+
+#### **7. Results**
+
+* The trained GNN model successfully predicts relative edge speeds and travel times.
+
+* In live evaluation, routes produced consistent topologies compared to Google Maps.
+
+* However, ETA magnitudes can differ due to dataset scale and limited live coverage (~4.5k edges of 390k total).
+
+---
+
+#### **8. Limitations**
+
+* **Limited coverage**: Live API data available only for a subset of edges.
+
+* **Approximate scaling**: A static multiplier (2.3×) is used to correct ETA underestimation — future work should use calibration regression.
+
+* **No real driver feedback loop**: No continuous retraining on observed journey durations.
+
+* **Compute constraints**: Model trained on subset (100k edges) for faster iteration.
+
+* **Vercel deployment limits**: CPU-only inference, so heavy models may lag.
+
+---
+
+#### **9. Future Work**
+
+* **Full-graph training** on 390k+ edges for better generalization.
+
+* **Dynamic calibration** using real trip data (similar to Uber's ETA correction models).
+
+* **Multi-API integration** (TomTom + Google + HERE) for robust traffic merging.
+
+* **Route personalization** — factoring time-of-day, weather, and road closures.
+
+* **Containerized microservice deployment** — separating API inference from the Streamlit UI.
+
+* **Mobile interface** — for quick ETA lookups.
+
+---
+
+#### **10. Strengths & Advantages**
+
+* **Data-driven**: Combines open geospatial data with live APIs.
+
+* **Scalable design**: Architecture generalizes to any city with minimal code change.
+
+* **Humanized UI**: Minimal, clean, and intuitive; refreshes routes like a real map app.
+
+* **Modular structure**: Clear boundaries between data prep, modeling, routing, and visualization.
+
+* **Transparent workflow**: Every step (from data to deployment) reproducible from scripts.
+
+---
+
+#### **11. Summary**
+
+This project bridges geospatial analysis, graph machine learning, and live systems engineering.
+
+It demonstrates how a city-scale road network can be modeled, updated, and visualized through learned travel time predictions.
+
+The approach is not yet production-grade (as it lacks feedback and retraining loops), but it establishes a **strong foundation** for intelligent routing — a framework that could easily evolve into a lightweight version of Google Maps' ETA engine, powered by graph ML.
+
+---
+
+**Author:**
+
+Suhaib Khan
+
+*(Route Optimization and GNN ETA Prediction, 2025)*
+
+---
+
